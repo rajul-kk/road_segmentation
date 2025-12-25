@@ -1,0 +1,6 @@
+kagglehub
+torch
+torchvision
+numpy
+Pillow
+networkx
