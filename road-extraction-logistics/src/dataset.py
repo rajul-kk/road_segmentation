@@ -27,25 +27,24 @@ from src.mask_loader import load_and_process_mask
 class RoadSegmentationDataset(Dataset):
     """
     Custom dataset for road segmentation.
-    Expects images in data/raw/train/images/ and masks in data/raw/train/masks/
+    Expects DeepGlobe format: images (*_sat.jpg) and masks (*_mask.png) in the same directory.
     """
     
-    def __init__(self, image_dir, mask_dir, transform=None, normalize=True):
+    def __init__(self, data_dir, transform=None, normalize=True):
         """
         Args:
-            image_dir: Path to directory containing satellite images
-            mask_dir: Path to directory containing binary masks
+            data_dir: Path to directory containing both satellite images and masks
+                     Images should be named *_sat.jpg, masks *_mask.png
             transform: Optional torchvision transforms for augmentation
             normalize: If True, normalize to ImageNet stats for DeepLabV3
         """
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
+        self.data_dir = data_dir
         self.transform = transform
         self.normalize = normalize
         
-        # Get list of image files
-        self.image_files = sorted([f for f in os.listdir(image_dir) 
-                                   if f.endswith(('.png', '.jpg', '.jpeg'))])
+        # Get list of satellite image files (ending with _sat.jpg)
+        self.image_files = sorted([f for f in os.listdir(data_dir) 
+                                   if f.endswith('_sat.jpg')])
         
         # ImageNet normalization stats (required for pre-trained DeepLabV3)
         self.normalize_transform = transforms.Normalize(
@@ -62,11 +61,14 @@ class RoadSegmentationDataset(Dataset):
     def __getitem__(self, idx):
         # Load image
         img_name = self.image_files[idx]
-        img_path = os.path.join(self.image_dir, img_name)
+        img_path = os.path.join(self.data_dir, img_name)
         image = Image.open(img_path).convert('RGB')
         
+        # Convert image filename to mask filename: *_sat.jpg -> *_mask.png
+        mask_name = img_name.replace('_sat.jpg', '_mask.png')
+        mask_path = os.path.join(self.data_dir, mask_name)
+        
         # Load and process mask using mask_loader
-        mask_path = os.path.join(self.mask_dir, img_name)
         mask_class = load_and_process_mask(
             mask_path, 
             transform=self.transform, 

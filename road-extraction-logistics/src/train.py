@@ -10,20 +10,14 @@ from models.architecture import model
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
-# Verify data directories exist
-image_dir = "data/raw/train/images"
-mask_dir = "data/raw/train/masks"
+# Verify data directory exists (DeepGlobe format: images and masks in same folder)
+data_dir = "data/raw/train"
 
-if not os.path.exists(image_dir):
-    raise FileNotFoundError(f"Image directory not found: {image_dir}")
-if not os.path.exists(mask_dir):
-    raise FileNotFoundError(f"Mask directory not found: {mask_dir}")
+if not os.path.exists(data_dir):
+    raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
 # Create dataset and dataloader
-dataset = RoadSegmentationDataset(
-    image_dir=image_dir,
-    mask_dir=mask_dir
-)
+dataset = RoadSegmentationDataset(data_dir=data_dir)
 
 if len(dataset) == 0:
     raise ValueError("Dataset is empty! Check that images and masks are in the correct directories.")
@@ -64,7 +58,7 @@ for epoch in range(num_epochs):
 print("Training complete!")
 
 # Save the trained model
-model_save_path = "models/unet_model.pth"
+model_save_path = "models/DeeplabsV3.pth"
 torch.save({
     'model_state_dict': model.state_dict(),
     'epoch': num_epochs,
