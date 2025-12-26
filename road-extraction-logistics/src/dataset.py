@@ -22,7 +22,12 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 import numpy as np
-from src.mask_loader import load_and_process_mask
+
+# Use relative import when run as part of package, fallback to direct import
+try:
+    from src.mask_loader import load_and_process_mask
+except ModuleNotFoundError:
+    from mask_loader import load_and_process_mask
 
 class RoadSegmentationDataset(Dataset):
     """

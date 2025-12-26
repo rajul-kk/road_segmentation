@@ -3,6 +3,13 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 import os
+import sys
+
+# Add project root to path for imports
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+os.chdir(project_root)
+
 from src.dataset import RoadSegmentationDataset
 from models.architecture import model
 

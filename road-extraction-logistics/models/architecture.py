@@ -50,8 +50,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.segmentation import deeplabv3_resnet50, deeplabv3_resnet101
 
-# Load DeepLabV3 model for road segmentation (2 classes: road and background)
-model = deeplabv3_resnet50(pretrained=True, num_classes=2)
+# Load DeepLabV3 model with pretrained weights
+# First load with default 21 classes, then replace the classifier head for 2 classes
+model = deeplabv3_resnet50(weights='DEFAULT')
+
+# Replace the classifier head for binary segmentation (2 classes: road and background)
+model.classifier[4] = nn.Conv2d(256, 2, kernel_size=1)
+model.aux_classifier[4] = nn.Conv2d(256, 2, kernel_size=1)
 
 def forward_with_binary_output(model, x, use_sigmoid=True):
     """
