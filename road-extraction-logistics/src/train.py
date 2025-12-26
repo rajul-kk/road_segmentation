@@ -4,6 +4,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 import os
 import sys
+from tqdm import tqdm
 
 # Add project root to path for imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +45,12 @@ model.train()
 num_epochs = 10
 
 for epoch in range(num_epochs):
-    for batch_idx, (images, masks) in enumerate(dataloader):
+    epoch_loss = 0.0
+    
+    # Progress bar for each epoch
+    progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch")
+    
+    for batch_idx, (images, masks) in enumerate(progress_bar):
         images = images.to(device)
         masks = masks.to(device)  # Shape: (batch, height, width) with class indices 0 or 1
         
@@ -59,8 +65,12 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
         
-        if batch_idx % 10 == 0:
-            print(f"Epoch {epoch+1}/{num_epochs}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+        # Update progress bar with current loss
+        epoch_loss += loss.item()
+        avg_loss = epoch_loss / (batch_idx + 1)
+        progress_bar.set_postfix(loss=f"{loss.item():.4f}", avg_loss=f"{avg_loss:.4f}")
+    
+    print(f"Epoch {epoch+1}/{num_epochs} completed. Average Loss: {avg_loss:.4f}")
 
 print("Training complete!")
 
