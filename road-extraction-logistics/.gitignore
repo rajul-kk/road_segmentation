@@ -1,4 +1,28 @@
 INTEGRATION_GUIDE.md
 
 data/raw/
+data/masks/predicted/
+data/paths/
+
+# Model files
+models/*.pth
+models/checkpoint.pth
+models/checkpoints/
+
+# Ignore Data
+data/
+*.jpg
+*.png
+*.tif
+
+# Ignore Models
+models/
+*.pth
+*.pt
+*.h5
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
 
