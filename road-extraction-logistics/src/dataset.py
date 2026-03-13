@@ -20,6 +20,8 @@ import os
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+import torchvision.transforms.functional as TF
+import random
 from PIL import Image
 import numpy as np
 
@@ -46,6 +48,7 @@ class RoadSegmentationDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         self.normalize = normalize
+        self.augment = transform is None # Apply default augmentations if no custom transform provided
         
         # Get list of satellite image files (ending with _sat.jpg)
         self.image_files = sorted([f for f in os.listdir(data_dir) 
@@ -69,26 +72,42 @@ class RoadSegmentationDataset(Dataset):
         img_path = os.path.join(self.data_dir, img_name)
         image = Image.open(img_path).convert('RGB')
         
-        # Convert image filename to mask filename: *_sat.jpg -> *_mask.png
+        # Load and process mask using mask_loader
+        # We'll load the raw mask first if we need to augment
         mask_name = img_name.replace('_sat.jpg', '_mask.png')
         mask_path = os.path.join(self.data_dir, mask_name)
+        mask = Image.open(mask_path).convert('L')
         
-        # Load and process mask using mask_loader
-        mask_class = load_and_process_mask(
-            mask_path, 
-            transform=self.transform, 
-            to_tensor=self.to_tensor
-        )
-        
-        # Apply transforms to image if provided
+        # Apply joint transformations for rotational invariance
+        if self.augment:
+            # Random horizontal flipping
+            if random.random() > 0.5:
+                image = TF.hflip(image)
+                mask = TF.hflip(mask)
+
+            # Random vertical flipping
+            if random.random() > 0.5:
+                image = TF.vflip(image)
+                mask = TF.vflip(mask)
+
+            # Random rotation (90, 180, 270 degrees)
+            if random.random() > 0.5:
+                angle = random.choice([90, 180, 270])
+                image = TF.rotate(image, angle)
+                mask = TF.rotate(mask, angle)
+
+        # Apply custom transforms if provided
         if self.transform:
             image = self.transform(image)
-        else:
-            # Convert to tensor
-            image = self.to_tensor(image)
+            mask = self.transform(mask)
         
-        # Normalize image for DeepLabV3
+        # Final processing
+        image = self.to_tensor(image)
         if self.normalize:
             image = self.normalize_transform(image)
+            
+        # Process mask to class indices
+        mask = self.to_tensor(mask)
+        mask = (mask > 0.5).long().squeeze(0) # Shape: (H, W)
         
-        return image, mask_class
+        return image, mask

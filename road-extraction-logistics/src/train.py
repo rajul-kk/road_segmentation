@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 import os
 import sys
@@ -45,9 +46,39 @@ dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 # Move model to device
 model = model.to(device)
 
-# Loss function and optimizer
-criterion = nn.CrossEntropyLoss()
+# ============== IMPROVED LOSS FUNCTIONS ==============
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1e-6):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, predict, target):
+        # Apply softmax to get probabilities
+        predict = torch.softmax(predict, dim=1)
+        # Take the road class (index 1)
+        predict = predict[:, 1, :, :]
+        target = target.float()
+        
+        intersection = (predict * target).sum(dim=(1, 2))
+        union = predict.sum(dim=(1, 2)) + target.sum(dim=(1, 2))
+        
+        dice = (2. * intersection + self.smooth) / (union + self.smooth)
+        return 1 - dice.mean()
+
+# Loss function weights (give road class much more importance)
+# 0: background, 1: road
+class_weights = torch.tensor([1.0, 10.0]).to(device)
+
+# Loss functions
+ce_criterion = nn.CrossEntropyLoss(weight=class_weights)
+dice_criterion = DiceLoss()
+
+def criterion(outputs, targets):
+    return ce_criterion(outputs, targets) + dice_criterion(outputs, targets)
+
 optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
+# =====================================================
 
 # ============== CHECKPOINT HANDLING ==============
 start_epoch = 0
@@ -135,6 +166,9 @@ try:
         
         current_loss = avg_loss
         print(f"Epoch {epoch+1}/{NUM_EPOCHS} completed. Average Loss: {avg_loss:.4f}")
+        
+        # Step the scheduler based on epoch loss
+        scheduler.step(current_loss)
         
         # Save checkpoint after each epoch (or every N epochs)
         if (epoch + 1) % SAVE_EVERY_N_EPOCHS == 0:
