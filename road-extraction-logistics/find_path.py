@@ -20,11 +20,12 @@ import numpy as np
 from PIL import Image, ImageDraw
 from typing import Tuple, List, Optional
 
-# Add project root to path for imports
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
+import config as cfg
 from src.pathfinder import AStarPathfinder
+from src.post_process import get_skeleton
 
 
 class RoadPathfinder:
@@ -35,38 +36,57 @@ class RoadPathfinder:
     to find the shortest path between two points on the road network.
     """
     
-    def __init__(self, mask_path: str, road_threshold: int = 128):
+    def __init__(self, mask_path: str, road_threshold: int = 128, use_skeleton: bool = None):
         """
         Initialize the road pathfinder with a mask image.
-        
+
         Args:
-            mask_path: Path to the binary road mask image
-            road_threshold: Pixel value threshold for road detection (default: 128)
-                           Pixels >= threshold are considered road
+            mask_path:      Path to the binary road mask image.
+            road_threshold: Pixel value threshold for road detection (default 128).
+            use_skeleton:   If True, run A* on the 1-px-wide skeleton centerline instead of
+                            the full thick mask — dramatically smaller search space.
+                            Defaults to cfg.USE_SKELETON.
         """
-        self.mask_path = mask_path
+        if use_skeleton is None:
+            use_skeleton = cfg.USE_SKELETON
+
+        self.mask_path      = mask_path
         self.road_threshold = road_threshold
-        
-        # Load and process mask
-        self.mask_image = Image.open(mask_path).convert('L')  # Convert to grayscale
+        self.use_skeleton   = use_skeleton
+
+        self.mask_image = Image.open(mask_path).convert('L')
         self.mask_array = np.array(self.mask_image)
         self.height, self.width = self.mask_array.shape
-        
-        # Create binary road mask (True = road, False = not road)
-        self.road_mask = self.mask_array >= road_threshold
-        
-        # Initialize A* pathfinder
+
+        # Thick mask used for snapping off-road points and visualization
+        self.display_mask = self.mask_array >= road_threshold
+
+        if use_skeleton:
+            # Skeletonize the thick mask and use the 1-px centerline for A*
+            skel_array    = get_skeleton(self.mask_array)
+            self.road_mask = skel_array > 127
+            nav_pixels     = int(np.sum(self.road_mask))
+        else:
+            self.road_mask = self.display_mask
+            nav_pixels     = int(np.sum(self.road_mask))
+
         self.pathfinder = AStarPathfinder()
-        
-        print(f"Loaded mask: {mask_path}")
-        print(f"Dimensions: {self.width} x {self.height}")
-        print(f"Road pixels: {np.sum(self.road_mask)} ({100*np.sum(self.road_mask)/(self.width*self.height):.2f}%)")
+
+        print(f"Loaded mask: {mask_path}  ({self.width}x{self.height})")
+        print(f"Navigation pixels: {nav_pixels}  (skeleton={use_skeleton})")
     
     def is_road(self, point: Tuple[int, int]) -> bool:
-        """Check if a point is on the road."""
+        """Check if a point is on the navigable road (skeleton or thick mask)."""
         x, y = point
         if 0 <= x < self.width and 0 <= y < self.height:
-            return self.road_mask[y, x]
+            return bool(self.road_mask[y, x])
+        return False
+
+    def is_any_road(self, point: Tuple[int, int]) -> bool:
+        """Check against the thick display mask — used for snapping off-road points."""
+        x, y = point
+        if 0 <= x < self.width and 0 <= y < self.height:
+            return bool(self.display_mask[y, x])
         return False
     
     def get_neighbors(self, mask: np.ndarray, node: Tuple[int, int]) -> List[Tuple[int, int]]:
@@ -112,30 +132,40 @@ class RoadPathfinder:
     
     def find_nearest_road(self, point: Tuple[int, int], max_search: int = 50) -> Optional[Tuple[int, int]]:
         """
-        Find the nearest road pixel to a given point.
-        
-        Args:
-            point: (x, y) coordinate
-            max_search: Maximum search radius
-        
-        Returns:
-            Nearest road pixel coordinate, or None if not found
+        Find the nearest navigable road pixel to a given point.
+
+        When using skeleton mode, snaps first to the thick mask then finds the
+        nearest skeleton pixel — so off-road points can still be snapped reliably.
         """
-        x, y = point
-        
-        # If already on road, return the point
         if self.is_road(point):
             return point
-        
-        # Spiral outward search
+
+        x, y = point
+        # Spiral outward search against the navigable mask (road_mask)
         for radius in range(1, max_search + 1):
             for dx in range(-radius, radius + 1):
                 for dy in range(-radius, radius + 1):
-                    if abs(dx) == radius or abs(dy) == radius:  # Only check perimeter
-                        nx, ny = x + dx, y + dy
-                        if self.is_road((nx, ny)):
-                            return (nx, ny)
-        
+                    if abs(dx) == radius or abs(dy) == radius:
+                        candidate = (x + dx, y + dy)
+                        if self.is_road(candidate):
+                            return candidate
+
+        # If skeleton mode and no skeleton pixel found nearby, fall back to thick mask
+        if self.use_skeleton:
+            for radius in range(1, max_search + 1):
+                for dx in range(-radius, radius + 1):
+                    for dy in range(-radius, radius + 1):
+                        if abs(dx) == radius or abs(dy) == radius:
+                            candidate = (x + dx, y + dy)
+                            if self.is_any_road(candidate):
+                                # Find nearest skeleton pixel to this thick-mask point
+                                skel_pixels = np.argwhere(self.road_mask)
+                                if len(skel_pixels) > 0:
+                                    cx, cy = candidate
+                                    dists = np.sqrt((skel_pixels[:, 1] - cx)**2 + (skel_pixels[:, 0] - cy)**2)
+                                    nearest = skel_pixels[np.argmin(dists)]
+                                    return (int(nearest[1]), int(nearest[0]))
+
         return None
     
     def find_path(self, start: Tuple[int, int], goal: Tuple[int, int], 
@@ -213,7 +243,7 @@ class RoadPathfinder:
         Returns:
             PIL Image with the path drawn on it
         """
-        rgb = np.where(self.road_mask[:, :, np.newaxis],
+        rgb = np.where(self.display_mask[:, :, np.newaxis],
                        np.array([255, 255, 255], dtype=np.uint8),
                        np.array([30,  30,  30],  dtype=np.uint8))
         vis_image = Image.fromarray(rgb.astype(np.uint8), mode='RGB')
@@ -268,7 +298,7 @@ class RoadPathfinder:
         sat_image = sat_image.resize((self.width, self.height))
         
         overlay_arr = np.zeros((self.height, self.width, 4), dtype=np.uint8)
-        overlay_arr[self.road_mask] = [255, 255, 0, int(255 * opacity * 0.3)]
+        overlay_arr[self.display_mask] = [255, 255, 0, int(255 * opacity * 0.3)]
         road_overlay = Image.fromarray(overlay_arr, mode='RGBA')
         
         # Composite
