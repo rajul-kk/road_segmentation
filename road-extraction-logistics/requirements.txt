@@ -5,3 +5,5 @@ numpy
 Pillow
 networkx
 tqdm
+opencv-python
+scikit-image

@@ -28,8 +28,10 @@ import numpy as np
 # Use relative import when run as part of package, fallback to direct import
 try:
     from src.mask_loader import load_and_process_mask
+    from src.preprocessing import apply_clahe
 except ModuleNotFoundError:
     from mask_loader import load_and_process_mask
+    from preprocessing import apply_clahe
 
 class RoadSegmentationDataset(Dataset):
     """
@@ -37,17 +39,19 @@ class RoadSegmentationDataset(Dataset):
     Expects DeepGlobe format: images (*_sat.jpg) and masks (*_mask.png) in the same directory.
     """
     
-    def __init__(self, data_dir, transform=None, normalize=True):
+    def __init__(self, data_dir, transform=None, normalize=True, use_clahe=False):
         """
         Args:
             data_dir: Path to directory containing both satellite images and masks
                      Images should be named *_sat.jpg, masks *_mask.png
             transform: Optional torchvision transforms for augmentation
             normalize: If True, normalize to ImageNet stats for DeepLabV3
+            use_clahe: If True, apply CLAHE contrast enhancement to images
         """
         self.data_dir = data_dir
         self.transform = transform
         self.normalize = normalize
+        self.use_clahe = use_clahe
         self.augment = transform is None # Apply default augmentations if no custom transform provided
         
         # Get list of satellite image files (ending with _sat.jpg)
@@ -71,6 +75,10 @@ class RoadSegmentationDataset(Dataset):
         img_name = self.image_files[idx]
         img_path = os.path.join(self.data_dir, img_name)
         image = Image.open(img_path).convert('RGB')
+        
+        # Apply CLAHE if enabled
+        if self.use_clahe:
+            image = apply_clahe(image)
         
         # Load and process mask using mask_loader
         # We'll load the raw mask first if we need to augment

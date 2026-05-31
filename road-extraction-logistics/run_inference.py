@@ -22,16 +22,23 @@ sys.path.insert(0, project_root)
 os.chdir(project_root)
 
 from models.architecture import model as base_model
+from src.post_process import clean_mask, get_skeleton
+from src.preprocessing import apply_clahe
 
 # ============== CONFIGURATION ==============
 MODEL_PATH = "models/DeeplabsV3_road_final.pth"  # Trained model path
 INPUT_DIR = "data/raw/test"                       # Directory with input images (*_sat.jpg or any RGB images)
 OUTPUT_DIR = "data/masks/predicted"              # Directory to save predicted masks
+CLEAN_DIR = "data/masks/cleaned"                 # Directory for cleaned masks
+SKEL_DIR = "data/masks/skeletons"                # Directory for road centerlines
 THRESHOLD = 0.5                                   # Probability threshold for road vs background (0.0-1.0)
+USE_CLAHE = True                                   # Apply CLAHE contrast enhancement
 # ============================================
 
-# Create output directory if it doesn't exist
+# Create output directories
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(CLEAN_DIR, exist_ok=True)
+os.makedirs(SKEL_DIR, exist_ok=True)
 
 # Setup device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -146,6 +153,8 @@ def main():
             mask_name = f"{name}_roadmask.png"
         
         out_path = os.path.join(OUTPUT_DIR, mask_name)
+        clean_path = os.path.join(CLEAN_DIR, mask_name)
+        skel_path = os.path.join(SKEL_DIR, mask_name)
         
         # Skip if mask already exists (resume functionality)
         if os.path.exists(out_path):
@@ -156,16 +165,34 @@ def main():
         try:
             # Load image
             img = Image.open(in_path).convert("RGB")
+            
+            # Apply CLAHE if enabled
+            if USE_CLAHE:
+                img = apply_clahe(img)
+                
             original_size = img.size
             print(f"[{idx}/{len(files)}] Processing: {fname} ({original_size[0]}x{original_size[1]})", flush=True)
             
             # Predict mask
             mask_img = predict_mask(img)
             
-            # Save immediately after processing
+            # Save raw predicted mask
             mask_img.save(out_path)
+            
+            # Post-processing
+            mask_array = np.array(mask_img)
+            
+            # Cleaning
+            cleaned_array = clean_mask(mask_array)
+            Image.fromarray(cleaned_array).save(clean_path)
+            
+            # Skeletonization (Centerlines)
+            skel_array = get_skeleton(cleaned_array)
+            Image.fromarray(skel_array).save(skel_path)
+            
             processed_count += 1
-            print(f"   ✅ Saved: {out_path}", flush=True)
+            print(f"   ✅ Saved: {out_path}")
+            print(f"   ✨ Post-processed: Cleaned and Skeletonized saved.")
             
         except Exception as e:
             print(f"   ❌ Error processing {fname}: {e}", flush=True)
