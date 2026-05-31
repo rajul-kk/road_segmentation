@@ -48,7 +48,8 @@ def parse_args():
     p.add_argument("--model",      default=cfg.FINAL_MODEL_PATH, help="Path to trained model checkpoint")
     p.add_argument("--backbone",   default=cfg.BACKBONE,        choices=["resnet50", "resnet101"])
     p.add_argument("--threshold",  type=float, default=cfg.THRESHOLD, help="Road probability threshold (0–1)")
-    p.add_argument("--no-clahe",   action="store_true",          help="Disable CLAHE preprocessing")
+    p.add_argument("--no-clahe",   action="store_true", help="Disable CLAHE preprocessing")
+    p.add_argument("--no-tta",     action="store_true", help="Disable test-time augmentation (h-flip average)")
     return p.parse_args()
 
 
@@ -73,13 +74,22 @@ def main():
         print("✅ Loaded model weights")
 
     use_clahe = cfg.USE_CLAHE and not args.no_clahe
+    use_tta   = not args.no_tta
 
     @torch.no_grad()
     def predict_mask(img: Image.Image) -> Image.Image:
-        x = _preprocess(img).to(device)
-        logits = model(x)['out']                         # (1, 2, H, W)
-        probs  = torch.softmax(logits, dim=1)[:, 1:2]   # road class probability
-        mask   = (probs > args.threshold).float().cpu().numpy()[0, 0]
+        x = _preprocess(img).to(device)                 # (1, 3, H, W)
+        logits = model(x)['out']                        # (1, 2, H, W)
+
+        if use_tta:
+            # Average with horizontally flipped prediction for better accuracy
+            x_flip      = torch.flip(x, dims=[3])
+            logits_flip = model(x_flip)['out']
+            logits_flip = torch.flip(logits_flip, dims=[3])  # flip back to original orientation
+            logits      = (logits + logits_flip) * 0.5
+
+        probs = torch.softmax(logits, dim=1)[:, 1:2]    # road class probability (1, 1, H, W)
+        mask  = (probs > args.threshold).float().cpu().numpy()[0, 0]
         return Image.fromarray((mask * 255).astype(np.uint8))
 
     # ── I/O setup ─────────────────────────────────────────────────────────────
@@ -95,7 +105,7 @@ def main():
         return
 
     print(f"\nFound {len(files)} images in {args.input}")
-    print(f"Threshold: {args.threshold}  |  CLAHE: {use_clahe}")
+    print(f"Threshold: {args.threshold}  |  CLAHE: {use_clahe}  |  TTA: {use_tta}")
     print("=" * 60)
 
     processed = skipped = 0
