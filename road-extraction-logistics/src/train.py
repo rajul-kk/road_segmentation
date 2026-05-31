@@ -8,195 +8,161 @@ import sys
 from tqdm import tqdm
 import signal
 
-# Add project root to path for imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 os.chdir(project_root)
 
+import config as cfg
 from src.dataset import RoadSegmentationDataset
-from models.architecture import model
+from models.architecture import build_model
 
-# ============== CONFIGURATION ==============
-CHECKPOINT_PATH = "models/checkpoint.pth"
-FINAL_MODEL_PATH = "models/DeeplabsV3.pth"
-DATA_DIR = "data/raw/train"
-BATCH_SIZE = 4
-NUM_EPOCHS = 10
-LEARNING_RATE = 1e-4
-SAVE_EVERY_N_EPOCHS = 1  # Save checkpoint every N epochs
-# ===========================================
-
-# Setup device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# ── Setup ─────────────────────────────────────────────────────────────────────
+device = cfg.DEVICE
 print(f"Using device: {device}")
 
-# Verify data directory exists
-if not os.path.exists(DATA_DIR):
-    raise FileNotFoundError(f"Data directory not found: {DATA_DIR}")
+os.makedirs(os.path.dirname(cfg.FINAL_MODEL_PATH), exist_ok=True)
 
-# Create dataset and dataloader
-dataset = RoadSegmentationDataset(data_dir=DATA_DIR)
+if not os.path.exists(cfg.DATA_DIR):
+    raise FileNotFoundError(f"Data directory not found: {cfg.DATA_DIR}")
 
+dataset = RoadSegmentationDataset(data_dir=cfg.DATA_DIR, augment=True, use_clahe=cfg.USE_CLAHE)
 if len(dataset) == 0:
-    raise ValueError("Dataset is empty! Check that images and masks are in the correct directories.")
+    raise ValueError("Dataset is empty — check that images and masks are in the correct directory.")
 
 print(f"Dataset size: {len(dataset)} images")
-dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=cfg.BATCH_SIZE, shuffle=True, num_workers=cfg.NUM_WORKERS)
 
-# Move model to device
-model = model.to(device)
+model = build_model(backbone=cfg.BACKBONE).to(device)
 
-# ============== IMPROVED LOSS FUNCTIONS ==============
+
+# ── Loss ──────────────────────────────────────────────────────────────────────
 class DiceLoss(nn.Module):
     def __init__(self, smooth=1e-6):
-        super(DiceLoss, self).__init__()
+        super().__init__()
         self.smooth = smooth
 
     def forward(self, predict, target):
-        # Apply softmax to get probabilities
-        predict = torch.softmax(predict, dim=1)
-        # Take the road class (index 1)
-        predict = predict[:, 1, :, :]
+        predict = torch.softmax(predict, dim=1)[:, 1, :, :]
         target = target.float()
-        
         intersection = (predict * target).sum(dim=(1, 2))
         union = predict.sum(dim=(1, 2)) + target.sum(dim=(1, 2))
-        
-        dice = (2. * intersection + self.smooth) / (union + self.smooth)
-        return 1 - dice.mean()
+        return 1 - ((2. * intersection + self.smooth) / (union + self.smooth)).mean()
 
-# Loss function weights (give road class much more importance)
-# 0: background, 1: road
+
 class_weights = torch.tensor([1.0, 10.0]).to(device)
-
-# Loss functions
 ce_criterion = nn.CrossEntropyLoss(weight=class_weights)
 dice_criterion = DiceLoss()
+
 
 def criterion(outputs, targets):
     return ce_criterion(outputs, targets) + dice_criterion(outputs, targets)
 
-optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+
+optimizer = Adam(model.parameters(), lr=cfg.LEARNING_RATE)
 scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2)
-# =====================================================
 
-# ============== CHECKPOINT HANDLING ==============
-start_epoch = 0
 
+# ── Checkpoint helpers ────────────────────────────────────────────────────────
 def save_checkpoint(epoch, model, optimizer, loss, path):
-    """Save training checkpoint."""
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss,
-        'model_type': 'deeplabv3_resnet50',
-        'num_classes': 2
+        'backbone': cfg.BACKBONE,
+        'num_classes': cfg.NUM_CLASSES,
     }, path)
     print(f"💾 Checkpoint saved: {path} (Epoch {epoch + 1})")
 
+
 def load_checkpoint(path, model, optimizer):
-    """Load training checkpoint and return starting epoch."""
     if os.path.exists(path):
         print(f"📂 Found checkpoint: {path}")
-        checkpoint = torch.load(path, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"✅ Resuming from epoch {start_epoch + 1}")
-        return start_epoch
+        ckpt = torch.load(path, map_location=device)
+        model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        start = ckpt['epoch'] + 1
+        print(f"✅ Resuming from epoch {start + 1}")
+        return start
     return 0
 
-# Check for existing checkpoint
-start_epoch = load_checkpoint(CHECKPOINT_PATH, model, optimizer)
 
-if start_epoch >= NUM_EPOCHS:
+start_epoch = load_checkpoint(cfg.CHECKPOINT_PATH, model, optimizer)
+
+if start_epoch >= cfg.NUM_EPOCHS:
     print(f"Training already complete ({start_epoch} epochs). Delete checkpoint to retrain.")
     sys.exit(0)
 
-# ============== GRACEFUL INTERRUPT HANDLING ==============
+
+# ── Interrupt handler ─────────────────────────────────────────────────────────
 interrupted = False
+
 
 def signal_handler(sig, frame):
     global interrupted
-    print("\n⚠️ Interrupt received! Saving checkpoint before exit...")
+    print("\n⚠️  Interrupt received — saving checkpoint before exit...")
     interrupted = True
+
 
 signal.signal(signal.SIGINT, signal_handler)
 
-# ============== TRAINING LOOP ==============
+
+# ── Training loop ─────────────────────────────────────────────────────────────
 model.train()
 current_loss = 0.0
 
-print(f"\n🚀 Starting training from epoch {start_epoch + 1} to {NUM_EPOCHS}")
+print(f"\n🚀 Starting training from epoch {start_epoch + 1} to {cfg.NUM_EPOCHS}")
 print("=" * 50)
 
 try:
-    for epoch in range(start_epoch, NUM_EPOCHS):
+    for epoch in range(start_epoch, cfg.NUM_EPOCHS):
         if interrupted:
             break
-            
+
         epoch_loss = 0.0
-        
-        # Progress bar for each epoch
-        progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{NUM_EPOCHS}", unit="batch")
-        
+        progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{cfg.NUM_EPOCHS}", unit="batch")
+
         for batch_idx, (images, masks) in enumerate(progress_bar):
             if interrupted:
                 break
-                
-            images = images.to(device)
-            masks = masks.to(device)
-            
-            # Forward pass
+
+            images, masks = images.to(device), masks.to(device)
+
             optimizer.zero_grad()
             output = model(images)['out']
-            
-            # Calculate loss
             loss = criterion(output, masks)
-            
-            # Backward pass
             loss.backward()
             optimizer.step()
-            
-            # Update progress bar
+
             epoch_loss += loss.item()
             avg_loss = epoch_loss / (batch_idx + 1)
-            progress_bar.set_postfix(loss=f"{loss.item():.4f}", avg_loss=f"{avg_loss:.4f}")
-        
+            progress_bar.set_postfix(loss=f"{loss.item():.4f}", avg=f"{avg_loss:.4f}")
+
         current_loss = avg_loss
-        print(f"Epoch {epoch+1}/{NUM_EPOCHS} completed. Average Loss: {avg_loss:.4f}")
-        
-        # Step the scheduler based on epoch loss
+        print(f"Epoch {epoch+1}/{cfg.NUM_EPOCHS} — avg loss: {avg_loss:.4f}")
         scheduler.step(current_loss)
-        
-        # Save checkpoint after each epoch (or every N epochs)
-        if (epoch + 1) % SAVE_EVERY_N_EPOCHS == 0:
-            save_checkpoint(epoch, model, optimizer, current_loss, CHECKPOINT_PATH)
+
+        if (epoch + 1) % cfg.SAVE_EVERY_N_EPOCHS == 0:
+            save_checkpoint(epoch, model, optimizer, current_loss, cfg.CHECKPOINT_PATH)
 
 except Exception as e:
     print(f"\n❌ Error during training: {e}")
-    save_checkpoint(epoch, model, optimizer, current_loss, CHECKPOINT_PATH)
+    save_checkpoint(epoch, model, optimizer, current_loss, cfg.CHECKPOINT_PATH)
     raise
 
-# ============== SAVE FINAL MODEL ==============
+# ── Save final model ──────────────────────────────────────────────────────────
 if not interrupted:
     print("\n✅ Training complete!")
-    
-    # Save final model
     torch.save({
         'model_state_dict': model.state_dict(),
-        'epoch': NUM_EPOCHS,
-        'model_type': 'deeplabv3_resnet50',
-        'num_classes': 2
-    }, FINAL_MODEL_PATH)
-    print(f"💾 Final model saved to {FINAL_MODEL_PATH}")
-    
-    # Optionally remove checkpoint after successful completion
-    if os.path.exists(CHECKPOINT_PATH):
-        os.remove(CHECKPOINT_PATH)
-        print(f"🗑️ Checkpoint removed (training complete)")
+        'epoch': cfg.NUM_EPOCHS,
+        'backbone': cfg.BACKBONE,
+        'num_classes': cfg.NUM_CLASSES,
+    }, cfg.FINAL_MODEL_PATH)
+    print(f"💾 Final model saved to {cfg.FINAL_MODEL_PATH}")
+    if os.path.exists(cfg.CHECKPOINT_PATH):
+        os.remove(cfg.CHECKPOINT_PATH)
+        print("🗑️  Checkpoint removed (training complete)")
 else:
-    # Save checkpoint on interrupt
-    save_checkpoint(epoch, model, optimizer, current_loss, CHECKPOINT_PATH)
-    print(f"\n⏸️ Training paused at epoch {epoch + 1}. Run again to resume.")
+    save_checkpoint(epoch, model, optimizer, current_loss, cfg.CHECKPOINT_PATH)
+    print(f"\n⏸️  Training paused at epoch {epoch + 1}. Run again to resume.")
