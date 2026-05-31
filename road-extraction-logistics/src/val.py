@@ -65,17 +65,14 @@ def validate():
     print(f"Using device: {device}")
     
     # Load model
-    if not os.path.exists(MODEL_PATH):
-        print(f"❌ Model not found: {MODEL_PATH}")
-        # Try fallback
-        MODEL_PATH_FALLBACK = "models/checkpoints/DeeplabsV3_road_final.pth"
-        if os.path.exists(MODEL_PATH_FALLBACK):
-            print(f"📂 Found fallback model: {MODEL_PATH_FALLBACK}")
-            current_model_path = MODEL_PATH_FALLBACK
-        else:
-            return
-    else:
-        current_model_path = MODEL_PATH
+    # Try primary path then the flat models/ fallback (where train.py originally saved)
+    fallback_paths = [MODEL_PATH, "models/DeeplabsV3.pth", "models/DeeplabsV3_road_final.pth"]
+    current_model_path = next((p for p in fallback_paths if os.path.exists(p)), None)
+    if current_model_path is None:
+        print(f"❌ Model not found at any known path: {fallback_paths}")
+        return
+    if current_model_path != MODEL_PATH:
+        print(f"📂 Primary path not found, using fallback: {current_model_path}")
         
     print(f"Loading weights from {current_model_path}...")
     checkpoint = torch.load(current_model_path, map_location=device)
