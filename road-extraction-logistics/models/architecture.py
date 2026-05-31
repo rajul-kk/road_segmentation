@@ -7,8 +7,9 @@ def build_model(backbone: str = "resnet50") -> nn.Module:
     Build a DeepLabV3 model configured for binary road segmentation (2 classes).
 
     Args:
-        backbone: "resnet50" (default) or "resnet101".
-                  mobilenet_v3_large support is reserved for Plan 2 (different head structure).
+        backbone: One of:
+            "resnet50"  — lighter, faster (default)
+            "resnet101" — deeper, better accuracy, ~2x parameters
 
     Returns:
         DeepLabV3 model with ImageNet-pretrained backbone and a 2-class head.
@@ -16,9 +17,11 @@ def build_model(backbone: str = "resnet50") -> nn.Module:
     """
     if backbone == "resnet101":
         model = deeplabv3_resnet101(weights="DEFAULT")
-    else:
+    elif backbone == "resnet50":
         model = deeplabv3_resnet50(weights="DEFAULT")
+    else:
+        raise ValueError(f"Unsupported backbone: {backbone!r}. Choose 'resnet50' or 'resnet101'.")
 
-    model.classifier[4] = nn.Conv2d(256, 2, kernel_size=1)
+    model.classifier[4]     = nn.Conv2d(256, 2, kernel_size=1)
     model.aux_classifier[4] = nn.Conv2d(256, 2, kernel_size=1)
     return model

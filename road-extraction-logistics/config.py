@@ -13,7 +13,7 @@ NUM_WORKERS = 0        # set >0 on Linux/Mac; Windows multiprocessing requires _
 PIN_MEMORY = True
 
 # ── Model ─────────────────────────────────────────────────────────────────────
-BACKBONE = "resnet50"  # "resnet50" | "resnet101" | "mobilenet_v3_large"
+BACKBONE = "resnet50"  # "resnet50" (default) | "resnet101" (higher accuracy, ~2x params)
 NUM_CLASSES = 2
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
