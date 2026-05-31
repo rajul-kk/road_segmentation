@@ -61,11 +61,12 @@ def validate():
     model.load_state_dict(ckpt['model_state_dict'] if 'model_state_dict' in ckpt else ckpt)
     model.eval()
 
-    dataset = RoadSegmentationDataset(data_dir=cfg.DATA_DIR, augment=False)
+    _, val_files = cfg.get_train_val_split()
+    dataset = RoadSegmentationDataset(data_dir=cfg.DATA_DIR, augment=False, file_list=val_files)
     dataloader = DataLoader(dataset, batch_size=cfg.BATCH_SIZE, shuffle=False)
 
     all_metrics = []
-    print(f"\nEvaluating on {len(dataset)} images...")
+    print(f"\nEvaluating on {len(dataset)} held-out val images ({cfg.VAL_SPLIT*100:.0f}% split)...")
 
     with torch.no_grad():
         for images, masks in tqdm(dataloader, desc="Validating"):
