@@ -1,3 +1,4 @@
+import argparse
 import torch
 import torch.nn as nn
 from torch.optim import Adam
@@ -17,33 +18,54 @@ from src.dataset import RoadSegmentationDataset
 from src.metrics import calculate_metrics, average_metrics
 from models.architecture import build_model
 
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Train DeepLabV3 road segmentation model")
+    p.add_argument("--data-dir",      default=cfg.DATA_DIR,          help="Training image directory")
+    p.add_argument("--epochs",        type=int,   default=cfg.NUM_EPOCHS)
+    p.add_argument("--batch-size",    type=int,   default=cfg.BATCH_SIZE)
+    p.add_argument("--lr",            type=float, default=cfg.LEARNING_RATE)
+    p.add_argument("--backbone",      default=cfg.BACKBONE,           choices=["resnet50", "resnet101"])
+    p.add_argument("--val-split",     type=float, default=cfg.VAL_SPLIT)
+    p.add_argument("--checkpoint",    default=cfg.CHECKPOINT_PATH)
+    p.add_argument("--output-model",  default=cfg.FINAL_MODEL_PATH)
+    p.add_argument("--num-workers",   type=int,   default=cfg.NUM_WORKERS)
+    p.add_argument("--no-clahe",      action="store_true",            help="Disable CLAHE preprocessing")
+    p.add_argument("--no-amp",        action="store_true",            help="Disable mixed-precision training")
+    return p.parse_args()
+
+
+args = parse_args()
+
 # ── Device + directories ──────────────────────────────────────────────────────
 device = cfg.DEVICE
 print(f"Using device: {device}")
-use_amp = device.type == "cuda"
+use_amp = device.type == "cuda" and not args.no_amp
 
-os.makedirs(os.path.dirname(cfg.FINAL_MODEL_PATH), exist_ok=True)
+os.makedirs(os.path.dirname(args.output_model), exist_ok=True)
 
-if not os.path.exists(cfg.DATA_DIR):
-    raise FileNotFoundError(f"Data directory not found: {cfg.DATA_DIR}")
+if not os.path.exists(args.data_dir):
+    raise FileNotFoundError(f"Data directory not found: {args.data_dir}")
+
+use_clahe = cfg.USE_CLAHE and not args.no_clahe
 
 # ── Train / val split ─────────────────────────────────────────────────────────
-train_files, val_files = cfg.get_train_val_split()
-train_dataset = RoadSegmentationDataset(cfg.DATA_DIR, augment=True,  use_clahe=cfg.USE_CLAHE, file_list=train_files)
-val_dataset   = RoadSegmentationDataset(cfg.DATA_DIR, augment=False, use_clahe=cfg.USE_CLAHE, file_list=val_files)
+train_files, val_files = cfg.get_train_val_split(data_dir=args.data_dir, val_fraction=args.val_split)
+train_dataset = RoadSegmentationDataset(args.data_dir, augment=True,  use_clahe=use_clahe, file_list=train_files)
+val_dataset   = RoadSegmentationDataset(args.data_dir, augment=False, use_clahe=use_clahe, file_list=val_files)
 
 if len(train_dataset) == 0:
     raise ValueError("Training split is empty — check images in DATA_DIR.")
 
 print(f"Train: {len(train_dataset)} images  |  Val: {len(val_dataset)} images")
 
-train_loader = DataLoader(train_dataset, batch_size=cfg.BATCH_SIZE, shuffle=True,
-                          num_workers=cfg.NUM_WORKERS, pin_memory=cfg.PIN_MEMORY)
-val_loader   = DataLoader(val_dataset,   batch_size=cfg.BATCH_SIZE, shuffle=False,
-                          num_workers=cfg.NUM_WORKERS, pin_memory=cfg.PIN_MEMORY)
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+                          num_workers=args.num_workers, pin_memory=cfg.PIN_MEMORY)
+val_loader   = DataLoader(val_dataset,   batch_size=args.batch_size, shuffle=False,
+                          num_workers=args.num_workers, pin_memory=cfg.PIN_MEMORY)
 
 # ── Model ─────────────────────────────────────────────────────────────────────
-model = build_model(backbone=cfg.BACKBONE).to(device)
+model = build_model(backbone=args.backbone).to(device)
 
 
 # ── Loss ──────────────────────────────────────────────────────────────────────
@@ -69,7 +91,7 @@ def criterion(outputs, targets):
     return ce_criterion(outputs, targets) + dice_criterion(outputs, targets)
 
 
-optimizer = Adam(model.parameters(), lr=cfg.LEARNING_RATE)
+optimizer = Adam(model.parameters(), lr=args.lr)
 scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=2)  # tracks val IoU
 scaler    = torch.cuda.amp.GradScaler(enabled=use_amp)
 
@@ -82,7 +104,7 @@ def save_checkpoint(epoch, model, optimizer, scaler, val_iou, path):
         'optimizer_state_dict': optimizer.state_dict(),
         'scaler_state_dict': scaler.state_dict(),
         'val_iou': val_iou,
-        'backbone': cfg.BACKBONE,
+        'backbone': args.backbone,
         'num_classes': cfg.NUM_CLASSES,
     }, path)
     print(f"💾 Checkpoint saved: {path} (Epoch {epoch + 1})")
@@ -118,9 +140,9 @@ def validate_epoch(model, loader):
     return average_metrics(all_metrics)
 
 
-start_epoch = load_checkpoint(cfg.CHECKPOINT_PATH, model, optimizer, scaler)
+start_epoch = load_checkpoint(args.checkpoint, model, optimizer, scaler)
 
-if start_epoch >= cfg.NUM_EPOCHS:
+if start_epoch >= args.epochs:
     print(f"Training already complete ({start_epoch} epochs). Delete checkpoint to retrain.")
     sys.exit(0)
 
@@ -142,16 +164,16 @@ signal.signal(signal.SIGINT, signal_handler)
 model.train()
 current_val_iou = 0.0
 
-print(f"\n🚀 Starting training — epochs {start_epoch + 1} to {cfg.NUM_EPOCHS}  |  AMP: {use_amp}")
+print(f"\n🚀 Starting training — epochs {start_epoch + 1} to {args.epochs}  |  AMP: {use_amp}  |  backbone: {args.backbone}")
 print("=" * 60)
 
 try:
-    for epoch in range(start_epoch, cfg.NUM_EPOCHS):
+    for epoch in range(start_epoch, args.epochs):
         if interrupted:
             break
 
         epoch_loss = 0.0
-        bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg.NUM_EPOCHS}", unit="batch")
+        bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", unit="batch")
 
         for batch_idx, (images, masks) in enumerate(bar):
             if interrupted:
@@ -182,11 +204,11 @@ try:
               f"val IoU: {val_metrics['iou']:.4f}  F1: {val_metrics['f1']:.4f}")
 
         if (epoch + 1) % cfg.SAVE_EVERY_N_EPOCHS == 0:
-            save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, cfg.CHECKPOINT_PATH)
+            save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, args.checkpoint)
 
 except Exception as e:
     print(f"\n❌ Error during training: {e}")
-    save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, cfg.CHECKPOINT_PATH)
+    save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, args.checkpoint)
     raise
 
 # ── Save final model ──────────────────────────────────────────────────────────
@@ -194,15 +216,15 @@ if not interrupted:
     print("\n✅ Training complete!")
     torch.save({
         'model_state_dict': model.state_dict(),
-        'epoch': cfg.NUM_EPOCHS,
-        'backbone': cfg.BACKBONE,
+        'epoch': args.epochs,
+        'backbone': args.backbone,
         'num_classes': cfg.NUM_CLASSES,
         'val_iou': current_val_iou,
-    }, cfg.FINAL_MODEL_PATH)
-    print(f"💾 Final model saved to {cfg.FINAL_MODEL_PATH}")
-    if os.path.exists(cfg.CHECKPOINT_PATH):
-        os.remove(cfg.CHECKPOINT_PATH)
+    }, args.output_model)
+    print(f"💾 Final model saved to {args.output_model}")
+    if os.path.exists(args.checkpoint):
+        os.remove(args.checkpoint)
         print("🗑️  Checkpoint removed")
 else:
-    save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, cfg.CHECKPOINT_PATH)
+    save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, args.checkpoint)
     print(f"\n⏸️  Training paused at epoch {epoch + 1}. Run again to resume.")
