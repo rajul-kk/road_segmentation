@@ -128,7 +128,7 @@ class AStarPathfinder:
             # Assume NetworkX graph
             try:
                 return list(graph.neighbors(node))
-            except:
+            except AttributeError:
                 return []
     
     def _get_cost_default(self, node1: Tuple[float, float], node2: Tuple[float, float]) -> float:

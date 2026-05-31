@@ -213,16 +213,10 @@ class RoadPathfinder:
         Returns:
             PIL Image with the path drawn on it
         """
-        # Convert mask to RGB for visualization
-        vis_image = Image.new('RGB', (self.width, self.height))
-        
-        # Draw road pixels in white, background in dark gray
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.road_mask[y, x]:
-                    vis_image.putpixel((x, y), (255, 255, 255))
-                else:
-                    vis_image.putpixel((x, y), (30, 30, 30))
+        rgb = np.where(self.road_mask[:, :, np.newaxis],
+                       np.array([255, 255, 255], dtype=np.uint8),
+                       np.array([30,  30,  30],  dtype=np.uint8))
+        vis_image = Image.fromarray(rgb.astype(np.uint8), mode='RGB')
         
         draw = ImageDraw.Draw(vis_image)
         
@@ -273,12 +267,9 @@ class RoadPathfinder:
         sat_image = Image.open(satellite_path).convert('RGB')
         sat_image = sat_image.resize((self.width, self.height))
         
-        # Create road overlay
-        road_overlay = Image.new('RGBA', (self.width, self.height), (0, 0, 0, 0))
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.road_mask[y, x]:
-                    road_overlay.putpixel((x, y), (255, 255, 0, int(255 * opacity * 0.3)))
+        overlay_arr = np.zeros((self.height, self.width, 4), dtype=np.uint8)
+        overlay_arr[self.road_mask] = [255, 255, 0, int(255 * opacity * 0.3)]
+        road_overlay = Image.fromarray(overlay_arr, mode='RGBA')
         
         # Composite
         sat_image = sat_image.convert('RGBA')
@@ -309,11 +300,29 @@ class RoadPathfinder:
         return result
 
 
-# ============== CONFIGURATION ==============
-MASK_DIR = "data/masks/predicted"        # Directory with predicted road masks
-OUTPUT_DIR = "data/paths"                # Directory to save path visualizations
-# Example coordinates (will be adjusted based on actual mask)
-# ============================================
+def pick_demo_endpoints(road_mask: np.ndarray):
+    """
+    Pick a start (near top-left) and goal (near bottom-right) from road pixels.
+    Uses the 10th and 90th percentile of (row + col) distance as a heuristic.
+
+    Returns:
+        (start, goal) as (x, y) tuples, or (None, None) if fewer than 2 road pixels.
+    """
+    road_pixels = np.argwhere(road_mask)
+    if len(road_pixels) < 2:
+        return None, None
+    distances = road_pixels[:, 0] + road_pixels[:, 1]
+    indices = np.argsort(distances)
+    s = indices[len(indices) // 10]
+    g = indices[len(indices) * 9 // 10]
+    start = (int(road_pixels[s, 1]), int(road_pixels[s, 0]))
+    goal  = (int(road_pixels[g, 1]), int(road_pixels[g, 0]))
+    return start, goal
+
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+MASK_DIR   = "data/masks/predicted"
+OUTPUT_DIR = "data/paths"
 
 
 def main():
@@ -344,26 +353,10 @@ def main():
     # Initialize pathfinder
     pathfinder = RoadPathfinder(mask_path)
     
-    # Find road pixels to use as start/end (for demo)
-    # Get some road pixels from different regions
-    road_pixels = np.argwhere(pathfinder.road_mask)
-    
-    if len(road_pixels) < 2:
+    start, goal = pick_demo_endpoints(pathfinder.road_mask)
+    if start is None:
         print("Not enough road pixels in the mask")
         return
-    
-    # Pick start from top-left region, goal from bottom-right region
-    # Sort by distance from top-left corner
-    distances_from_tl = road_pixels[:, 0] + road_pixels[:, 1]
-    sorted_indices = np.argsort(distances_from_tl)
-    
-    # Start: one of the closest to top-left
-    start_idx = sorted_indices[len(sorted_indices) // 10]  # 10th percentile
-    start = (int(road_pixels[start_idx, 1]), int(road_pixels[start_idx, 0]))  # (x, y)
-    
-    # Goal: one of the closest to bottom-right
-    goal_idx = sorted_indices[len(sorted_indices) * 9 // 10]  # 90th percentile
-    goal = (int(road_pixels[goal_idx, 1]), int(road_pixels[goal_idx, 0]))  # (x, y)
     
     print(f"\nStart point: {start}")
     print(f"Goal point: {goal}")

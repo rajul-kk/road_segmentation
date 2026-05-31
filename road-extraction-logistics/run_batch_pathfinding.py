@@ -19,7 +19,7 @@ from PIL import Image
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
-from find_path import RoadPathfinder
+from find_path import RoadPathfinder, pick_demo_endpoints
 
 # ============== CONFIGURATION ==============
 MASK_DIR = "data/masks/predicted"        # Directory with predicted road masks
@@ -53,24 +53,10 @@ def process_single_mask(mask_path: str, output_dir: str, mask_name: str) -> dict
         # Initialize pathfinder
         pathfinder = RoadPathfinder(mask_path)
         
-        # Find road pixels to use as start/end
-        road_pixels = np.argwhere(pathfinder.road_mask)
-        
-        if len(road_pixels) < 2:
+        start, goal = pick_demo_endpoints(pathfinder.road_mask)
+        if start is None:
             result['error'] = "Not enough road pixels"
             return result
-        
-        # Pick start from top-left region, goal from bottom-right region
-        distances_from_tl = road_pixels[:, 0] + road_pixels[:, 1]
-        sorted_indices = np.argsort(distances_from_tl)
-        
-        # Start: one of the closest to top-left
-        start_idx = sorted_indices[len(sorted_indices) // 10]
-        start = (int(road_pixels[start_idx, 1]), int(road_pixels[start_idx, 0]))
-        
-        # Goal: one of the closest to bottom-right
-        goal_idx = sorted_indices[len(sorted_indices) * 9 // 10]
-        goal = (int(road_pixels[goal_idx, 1]), int(road_pixels[goal_idx, 0]))
         
         # Find path
         path = pathfinder.find_path(start, goal)
