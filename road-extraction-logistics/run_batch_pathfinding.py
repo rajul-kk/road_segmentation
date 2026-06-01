@@ -19,7 +19,9 @@ from PIL import Image
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
+import config as cfg
 from find_path import RoadPathfinder, pick_demo_endpoints
+from src.path_utils import compute_path_distance
 
 # ============== CONFIGURATION ==============
 MASK_DIR = "data/masks/predicted"        # Directory with predicted road masks
@@ -53,31 +55,30 @@ def process_single_mask(mask_path: str, output_dir: str, mask_name: str) -> dict
         # Initialize pathfinder
         pathfinder = RoadPathfinder(mask_path)
         
-        start, goal = pick_demo_endpoints(pathfinder.road_mask)
+        start, goal = pick_demo_endpoints(pathfinder.display_mask)
         if start is None:
             result['error'] = "Not enough road pixels"
             return result
-        
-        # Find path
+
+        # Find path (smoothing applied inside find_path via path_utils)
         path = pathfinder.find_path(start, goal)
-        
+
         if path:
-            # Visualize and save
             output_name = mask_name.replace('_roadmask.png', '_path.png')
             output_path = os.path.join(output_dir, output_name)
-            
             pathfinder.visualize_path(path, output_path)
-            
-            # Calculate statistics
-            path_length = len(path)
-            euclidean_dist = np.sqrt((goal[0] - start[0])**2 + (goal[1] - start[1])**2)
-            efficiency = euclidean_dist / path_length * 100 if path_length > 0 else 0
-            
-            result['success'] = True
-            result['path_length'] = path_length
-            result['euclidean_distance'] = round(euclidean_dist, 1)
-            result['efficiency'] = round(efficiency, 1)
-            result['output_file'] = output_path
+
+            px_dist, m_dist       = compute_path_distance(path, cfg.PIXEL_RESOLUTION_METERS)
+            euclidean_px          = float(np.sqrt((goal[0]-start[0])**2 + (goal[1]-start[1])**2))
+            efficiency            = euclidean_px / px_dist * 100 if px_dist > 0 else 0
+
+            result['success']            = True
+            result['path_length']        = len(path)
+            result['road_distance_px']   = round(px_dist, 1)
+            result['road_distance_m']    = round(m_dist, 1) if m_dist is not None else None
+            result['euclidean_distance'] = round(euclidean_px, 1)
+            result['efficiency']         = round(efficiency, 1)
+            result['output_file']        = output_path
         else:
             result['error'] = "No path found between points"
             
@@ -136,10 +137,14 @@ def main():
         if result['success']:
             successful += 1
             print(f"  ✓ Path found!")
-            print(f"    Path length: {result['path_length']} pixels")
-            print(f"    Euclidean distance: {result['euclidean_distance']} pixels")
-            print(f"    Path efficiency: {result['efficiency']}%")
-            print(f"    Output: {result['output_file']}")
+            print(f"    Waypoints:          {result['path_length']}")
+            dist_str = (f"{result['road_distance_px']} px  ({result['road_distance_m']} m)"
+                        if result['road_distance_m'] is not None
+                        else f"{result['road_distance_px']} px")
+            print(f"    Road distance:      {dist_str}")
+            print(f"    Euclidean distance: {result['euclidean_distance']} px")
+            print(f"    Path efficiency:    {result['efficiency']}%")
+            print(f"    Output:             {result['output_file']}")
         else:
             failed += 1
             print(f"  ✗ Failed: {result['error']}")
@@ -153,10 +158,14 @@ def main():
     print(f"Failed: {failed}")
     
     if successful > 0:
-        avg_length = sum(r['path_length'] for r in results if r['success']) / successful
-        avg_efficiency = sum(r['efficiency'] for r in results if r['success']) / successful
-        print(f"\nAverage path length: {avg_length:.1f} pixels")
-        print(f"Average path efficiency: {avg_efficiency:.1f}%")
+        ok = [r for r in results if r['success']]
+        avg_dist_px  = sum(r['road_distance_px'] for r in ok) / successful
+        avg_dist_m   = sum(r['road_distance_m']  for r in ok if r['road_distance_m'] is not None)
+        avg_eff      = sum(r['efficiency'] for r in ok) / successful
+        dist_summary = (f"{avg_dist_px:.1f} px  ({avg_dist_m/successful:.1f} m avg)"
+                        if any(r['road_distance_m'] for r in ok) else f"{avg_dist_px:.1f} px")
+        print(f"\nAverage road distance:  {dist_summary}")
+        print(f"Average path efficiency: {avg_eff:.1f}%")
     
     print(f"\nOutput saved to: {OUTPUT_DIR}")
     print("=" * 70)

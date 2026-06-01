@@ -33,8 +33,8 @@ USE_CLAHE = True
 
 # ── Pathfinding ───────────────────────────────────────────────────────────────
 USE_SKELETON = True
-RDP_EPSILON = 2.0
-PIXEL_RESOLUTION_METERS = 2.39  # DeepGlobe ~0.5m/px native, scaled to 512px
+RDP_EPSILON = 2.0               # Ramer-Douglas-Peucker tolerance in pixels
+PIXEL_RESOLUTION_METERS = 2.39  # DeepGlobe ~0.5 m/px at native res, scaled to 512px
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

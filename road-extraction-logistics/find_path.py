@@ -26,6 +26,7 @@ sys.path.insert(0, project_root)
 import config as cfg
 from src.pathfinder import AStarPathfinder
 from src.post_process import get_skeleton
+from src.path_utils import smooth_path, compute_path_distance
 
 
 class RoadPathfinder:
@@ -217,12 +218,15 @@ class RoadPathfinder:
             get_neighbors=self.get_neighbors,
             get_cost=self.get_cost
         )
-        
+
         if path:
-            print(f"Path found! Length: {len(path)} pixels")
+            path = smooth_path(path, epsilon=cfg.RDP_EPSILON)
+            px, m = compute_path_distance(path, cfg.PIXEL_RESOLUTION_METERS)
+            dist_str = f"{m:.1f} m" if m is not None else f"{px:.1f} px"
+            print(f"Path found — {len(path)} waypoints, distance: {dist_str}")
         else:
             print("No path found between the two points")
-        
+
         return path
     
     def visualize_path(self, path: List[Tuple[int, int]], 
@@ -383,7 +387,7 @@ def main():
     # Initialize pathfinder
     pathfinder = RoadPathfinder(mask_path)
     
-    start, goal = pick_demo_endpoints(pathfinder.road_mask)
+    start, goal = pick_demo_endpoints(pathfinder.display_mask)
     if start is None:
         print("Not enough road pixels in the mask")
         return
@@ -402,14 +406,15 @@ def main():
         
         pathfinder.visualize_path(path, output_path)
         
-        # Calculate path statistics
-        path_length = len(path)
-        euclidean_dist = np.sqrt((goal[0] - start[0])**2 + (goal[1] - start[1])**2)
-        
+        # Path statistics
+        px_dist, m_dist = compute_path_distance(path, cfg.PIXEL_RESOLUTION_METERS)
+        euclidean_px = float(np.sqrt((goal[0]-start[0])**2 + (goal[1]-start[1])**2))
+
         print(f"\nPath Statistics:")
-        print(f"  Path length: {path_length} pixels")
-        print(f"  Euclidean distance: {euclidean_dist:.1f} pixels")
-        print(f"  Path efficiency: {euclidean_dist/path_length*100:.1f}%")
+        print(f"  Waypoints:          {len(path)}")
+        print(f"  Road distance:      {px_dist:.1f} px  ({m_dist:.1f} m)" if m_dist else f"  Road distance:      {px_dist:.1f} px")
+        print(f"  Euclidean distance: {euclidean_px:.1f} px")
+        print(f"  Path efficiency:    {euclidean_px/px_dist*100:.1f}%")
         
         # Try to overlay on satellite if available
         sat_name = mask_file.replace('_roadmask.png', '_sat.jpg')
