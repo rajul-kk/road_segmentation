@@ -3,8 +3,9 @@ import random
 import torch
 
 # ── Training ──────────────────────────────────────────────────────────────────
-IMAGE_SIZE = 512    # resize from native 1024×1024 before training; halves memory vs full-res
-BATCH_SIZE = 4
+IMAGE_SIZE = 1024   # native DeepGlobe resolution — roads are thin, resolution matters
+                   # P100 16GB: batch=4 at 1024px (~12 GB)  |  batch=16 at 512px (~9 GB)
+BATCH_SIZE = 4     # 4 at 1024px (P100).  Use 16 if you set IMAGE_SIZE=512.
 NUM_EPOCHS = 10
 LEARNING_RATE = 1e-4
 SAVE_EVERY_N_EPOCHS = 1
