@@ -51,8 +51,8 @@ use_clahe = cfg.USE_CLAHE and not args.no_clahe
 
 # ── Train / val split ─────────────────────────────────────────────────────────
 train_files, val_files = cfg.get_train_val_split(data_dir=args.data_dir, val_fraction=args.val_split)
-train_dataset = RoadSegmentationDataset(args.data_dir, augment=True,  use_clahe=use_clahe, file_list=train_files)
-val_dataset   = RoadSegmentationDataset(args.data_dir, augment=False, use_clahe=use_clahe, file_list=val_files)
+train_dataset = RoadSegmentationDataset(args.data_dir, augment=True,  use_clahe=use_clahe, file_list=train_files, img_size=cfg.IMAGE_SIZE)
+val_dataset   = RoadSegmentationDataset(args.data_dir, augment=False, use_clahe=use_clahe, file_list=val_files,  img_size=cfg.IMAGE_SIZE)
 
 if len(train_dataset) == 0:
     raise ValueError("Training split is empty — check images in DATA_DIR.")

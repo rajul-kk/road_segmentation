@@ -34,7 +34,7 @@ def validate():
     model.eval()
 
     _, val_files = cfg.get_train_val_split()
-    dataset = RoadSegmentationDataset(data_dir=cfg.DATA_DIR, augment=False, file_list=val_files)
+    dataset = RoadSegmentationDataset(data_dir=cfg.DATA_DIR, augment=False, file_list=val_files, img_size=cfg.IMAGE_SIZE)
     dataloader = DataLoader(dataset, batch_size=cfg.BATCH_SIZE, shuffle=False)
 
     all_metrics = []

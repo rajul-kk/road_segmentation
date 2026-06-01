@@ -3,6 +3,7 @@ import random
 import torch
 
 # ── Training ──────────────────────────────────────────────────────────────────
+IMAGE_SIZE = 512    # resize from native 1024×1024 before training; halves memory vs full-res
 BATCH_SIZE = 4
 NUM_EPOCHS = 10
 LEARNING_RATE = 1e-4

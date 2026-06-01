@@ -17,7 +17,8 @@ class RoadSegmentationDataset(Dataset):
     """
 
     def __init__(self, data_dir, image_transform=None, mask_transform=None,
-                 normalize=True, augment=True, use_clahe=False, file_list=None):
+                 normalize=True, augment=True, use_clahe=False, file_list=None,
+                 img_size=None):
         """
         Args:
             data_dir: Directory containing satellite images (*_sat.jpg) and masks (*_mask.png).
@@ -28,6 +29,8 @@ class RoadSegmentationDataset(Dataset):
             use_clahe: Apply CLAHE contrast enhancement before any other processing.
             file_list: Optional explicit list of *_sat.jpg filenames. When provided the
                        directory is not scanned — useful for reproducible train/val splits.
+            img_size: If set, resize both image and mask to (img_size, img_size) before
+                      augmentation. Recommended: 512 (halves memory vs native 1024×1024).
         """
         self.data_dir = data_dir
         self.image_transform = image_transform
@@ -35,6 +38,7 @@ class RoadSegmentationDataset(Dataset):
         self.normalize = normalize
         self.augment = augment
         self.use_clahe = use_clahe
+        self.resize = transforms.Resize((img_size, img_size)) if img_size else None
 
         if file_list is not None:
             self.image_files = sorted(file_list)
@@ -58,6 +62,11 @@ class RoadSegmentationDataset(Dataset):
 
         mask_name = img_name.replace('_sat.jpg', '_mask.png')
         mask = Image.open(os.path.join(self.data_dir, mask_name)).convert('L')
+
+        # Resize before any processing (joint, so mask stays aligned)
+        if self.resize:
+            image = self.resize(image)
+            mask  = self.resize(mask)
 
         if self.use_clahe:
             image = apply_clahe(image)
