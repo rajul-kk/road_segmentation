@@ -25,7 +25,7 @@ sys.path.insert(0, project_root)
 os.chdir(project_root)
 
 import config as cfg
-from models.architecture import build_model
+from models.architecture import load_model
 from src.post_process import clean_mask, get_skeleton
 from src.preprocessing import apply_clahe
 from find_path import RoadPathfinder, pick_demo_endpoints
@@ -47,15 +47,7 @@ def _ensure_model():
     if _model_error is not None:
         return None, _model_error
     try:
-        m = build_model(backbone=cfg.BACKBONE).to(cfg.DEVICE)
-        if not os.path.exists(cfg.FINAL_MODEL_PATH):
-            _model_error = (f"No trained model found at {cfg.FINAL_MODEL_PATH}. "
-                            "Run training first (python src/train.py).")
-            return None, _model_error
-        ckpt = torch.load(cfg.FINAL_MODEL_PATH, map_location=cfg.DEVICE)
-        m.load_state_dict(ckpt.get("model_state_dict", ckpt))
-        m.eval()
-        _model = m
+        _model = load_model()
         return _model, None
     except Exception as e:
         _model_error = str(e)
