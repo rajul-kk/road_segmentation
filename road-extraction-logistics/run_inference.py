@@ -21,7 +21,7 @@ sys.path.insert(0, project_root)
 os.chdir(project_root)
 
 import config as cfg
-from models.architecture import build_model
+from models.architecture import load_model
 from src.post_process import clean_mask, get_skeleton
 from src.preprocessing import apply_clahe
 
@@ -47,6 +47,11 @@ def parse_args():
     p.add_argument("--skel-dir",   default=cfg.SKEL_DIR,        help="Directory for skeletonized centerlines")
     p.add_argument("--model",      default=cfg.FINAL_MODEL_PATH, help="Path to trained model checkpoint")
     p.add_argument("--backbone",   default=cfg.BACKBONE,        choices=["resnet50", "resnet101"])
+    p.add_argument("--model-type", default=None,
+                   choices=["deeplabv3", "segformer"],
+                   help="Model architecture (default: cfg.MODEL_TYPE)")
+    p.add_argument("--variant",    default=None,
+                   help="SegFormer variant b0-b5 (default: cfg.SEGFORMER_VARIANT)")
     p.add_argument("--threshold",  type=float, default=cfg.THRESHOLD, help="Road probability threshold (0–1)")
     p.add_argument("--no-clahe",   action="store_true", help="Disable CLAHE preprocessing")
     p.add_argument("--no-tta",     action="store_true", help="Disable test-time augmentation (h-flip average)")
@@ -59,19 +64,13 @@ def main():
     device = cfg.DEVICE
     print(f"Using device: {device}")
 
-    if not os.path.exists(args.model):
-        raise FileNotFoundError(f"Model file not found: {args.model}")
-
-    print(f"Loading model from {args.model}...")
-    model = build_model(backbone=args.backbone).to(device)
-    model.eval()
-
-    ckpt = torch.load(args.model, map_location=device)
-    model.load_state_dict(ckpt['model_state_dict'] if 'model_state_dict' in ckpt else ckpt)
-    if 'epoch' in ckpt:
-        print(f"✅ Loaded checkpoint from epoch {ckpt['epoch']}")
-    else:
-        print("✅ Loaded model weights")
+    model = load_model(
+        model_path=args.model if args.model != cfg.FINAL_MODEL_PATH else None,
+        model_type=args.model_type,
+        backbone=args.backbone,
+        variant=args.variant,
+        device=device,
+    )
 
     use_clahe = cfg.USE_CLAHE and not args.no_clahe
     use_tta   = not args.no_tta
