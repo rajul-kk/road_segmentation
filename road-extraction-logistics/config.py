@@ -16,6 +16,12 @@ PIN_MEMORY = True
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 BACKBONE = "resnet50"  # "resnet50" (default) | "resnet101" (higher accuracy, ~2x params)
+
+# ── Model selection ───────────────────────────────────────────────────────────
+MODEL_TYPE           = "segformer"   # "segformer" | "deeplabv3"
+SEGFORMER_VARIANT    = "b2"
+SEGFORMER_MODEL_PATH = "models/checkpoints/segformer_best.pth"
+
 NUM_CLASSES = 2
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
