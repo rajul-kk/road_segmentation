@@ -148,3 +148,57 @@ def build_mask2former(backbone: str = "swin-t", num_classes: int = 2) -> nn.Modu
         num_labels=num_classes,
         ignore_mismatched_sizes=True,
     )
+
+
+# ── Unified model loader ───────────────────────────────────────────────────────
+
+def load_model(
+    model_path: str = None,
+    model_type: str = None,
+    backbone: str = None,
+    variant: str = None,
+    device=None,
+) -> nn.Module:
+    """
+    Build and load a trained segmentation model from a checkpoint.
+
+    Reads MODEL_TYPE from config by default; any arg can be overridden by callers.
+
+    Args:
+        model_path: Path to .pth checkpoint. Defaults to cfg path for the chosen type.
+        model_type: "segformer" or "deeplabv3". Defaults to cfg.MODEL_TYPE.
+        backbone:   DeepLabV3 backbone ("resnet50" / "resnet101"). Ignored for SegFormer.
+        variant:    SegFormer variant ("b0"–"b5"). Ignored for DeepLabV3.
+        device:     torch.device. Defaults to cfg.DEVICE.
+
+    Returns:
+        Model in eval() mode on the requested device.
+    """
+    import os
+    import config as cfg
+
+    model_type = model_type or cfg.MODEL_TYPE
+    device     = device     or cfg.DEVICE
+
+    if model_type == "segformer":
+        variant    = variant    or cfg.SEGFORMER_VARIANT
+        model_path = model_path or cfg.SEGFORMER_MODEL_PATH
+        model      = build_segformer(variant=variant).to(device)
+    else:
+        backbone   = backbone   or cfg.BACKBONE
+        model_path = model_path or cfg.FINAL_MODEL_PATH
+        model      = build_model(backbone=backbone).to(device)
+
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Checkpoint not found: {model_path}")
+
+    ckpt  = torch.load(model_path, map_location=device, weights_only=True)
+    state = ckpt.get("model_state_dict", ckpt)
+    model.load_state_dict(state)
+    model.eval()
+
+    epoch = ckpt.get("epoch", "?")
+    iou   = ckpt.get("val_iou")
+    tag   = f"epoch={epoch}" + (f", val_iou={iou:.4f}" if iou else "")
+    print(f"✅ Loaded {model_type} ({tag}) from {model_path}")
+    return model
