@@ -72,4 +72,4 @@ if __name__ == "__main__":
     base = os.path.splitext(input_path)[0]
     Image.fromarray(cleaned).save(f"{base}_cleaned.png")
     Image.fromarray(skeleton).save(f"{base}_skeleton.png")
-    print(f"✅ Processed {input_path}")
+    print(f"[OK] Processed {input_path}")

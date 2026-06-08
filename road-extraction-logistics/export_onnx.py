@@ -82,7 +82,7 @@ def main():
             "logits": {0: "batch", 2: "height", 3: "width"},
         },
     )
-    print(f"✅ Exported: {args.output}")
+    print(f"[OK] Exported: {args.output}")
 
     if args.verify:
         try:
@@ -91,12 +91,12 @@ def main():
             import numpy as np
 
             onnx.checker.check_model(args.output)
-            print("✅ ONNX model check passed")
+            print("[OK] ONNX model check passed")
 
             sess = ort.InferenceSession(args.output, providers=["CPUExecutionProvider"])
             inp  = dummy.numpy()
             out  = sess.run(None, {"image": inp})[0]
-            print(f"✅ onnxruntime inference OK — output shape: {out.shape}")
+            print(f"[OK] onnxruntime inference OK — output shape: {out.shape}")
 
             # Sanity-check: PyTorch vs ONNX outputs should match closely
             with torch.no_grad():
@@ -104,10 +104,10 @@ def main():
             max_diff = float(np.abs(pt_out - out).max())
             print(f"   Max abs diff PyTorch vs ONNX: {max_diff:.6f}")
             if max_diff > 1e-3:
-                print("⚠️  Difference is larger than expected — check opset compatibility")
+                print("[!]️  Difference is larger than expected — check opset compatibility")
 
         except ImportError as e:
-            print(f"⚠️  Verification skipped — missing package: {e}")
+            print(f"[!]️  Verification skipped — missing package: {e}")
             print("    Install with: pip install onnx onnxruntime")
 
 

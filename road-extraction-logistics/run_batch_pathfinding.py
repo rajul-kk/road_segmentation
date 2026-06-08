@@ -136,7 +136,7 @@ def main():
         
         if result['success']:
             successful += 1
-            print(f"  ✓ Path found!")
+            print(f"  [OK] Path found!")
             print(f"    Waypoints:          {result['path_length']}")
             dist_str = (f"{result['road_distance_px']} px  ({result['road_distance_m']} m)"
                         if result['road_distance_m'] is not None

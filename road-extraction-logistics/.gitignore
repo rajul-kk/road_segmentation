@@ -15,8 +15,9 @@ data/
 *.png
 *.tif
 
-# Ignore Models
-models/
+# Ignore model weights (keep source files)
+models/checkpoints/
+models/__pycache__/
 *.pth
 *.pt
 *.h5

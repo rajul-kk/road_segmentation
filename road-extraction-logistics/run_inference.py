@@ -2,7 +2,7 @@
 Road Segmentation Inference Script
 
 Loads a trained DeepLabV3 model and predicts road masks for satellite images.
-For each image: raw mask → morphological clean → skeletonized centerline.
+For each image: raw mask -> morphological clean -> skeletonized centerline.
 
 Usage:
     python run_inference.py
@@ -137,14 +137,14 @@ def main():
             Image.fromarray(get_skeleton(mask_arr)).save(skel_path)
 
             processed += 1
-            print(f"   ✅ Saved mask + cleaned + skeleton")
+            print(f"   Saved mask + cleaned + skeleton")
 
         except Exception as e:
-            print(f"   ❌ Error: {e}", flush=True)
+            print(f"   Error: {e}", flush=True)
 
     print("=" * 60)
-    print(f"✅ Done — processed: {processed}, skipped: {skipped}")
-    print(f"Masks → {args.output}")
+    print(f"Done — processed: {processed}, skipped: {skipped}")
+    print(f"Masks -> {args.output}")
 
 
 if __name__ == "__main__":

@@ -131,18 +131,99 @@ def _draw_markers(sat_pil: Image.Image, points: list) -> np.ndarray:
     return np.array(img)
 
 
+_CSS = """
+/* ── Industrial dark theme ─────────────────────────────────────────────── */
+body, .gradio-container {
+    background: #0f1117 !important;
+    color: #cbd5e1 !important;
+    font-family: 'Inter', 'IBM Plex Sans', system-ui, sans-serif !important;
+}
+.tab-nav button {
+    background: #1c1f2b !important;
+    color: #94a3b8 !important;
+    border: 1px solid #2d3347 !important;
+    border-radius: 0 !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+    font-size: 0.75rem !important;
+}
+.tab-nav button.selected {
+    background: #f97316 !important;
+    color: #0f1117 !important;
+    border-color: #f97316 !important;
+}
+.block, .panel, .form {
+    background: #1c1f2b !important;
+    border: 1px solid #2d3347 !important;
+    border-radius: 4px !important;
+}
+button.primary {
+    background: #f97316 !important;
+    color: #0f1117 !important;
+    border: none !important;
+    border-radius: 2px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase !important;
+}
+button.primary:hover {
+    background: #ea6c0a !important;
+}
+button.secondary {
+    background: #252836 !important;
+    color: #94a3b8 !important;
+    border: 1px solid #2d3347 !important;
+    border-radius: 2px !important;
+}
+input, textarea, select {
+    background: #252836 !important;
+    color: #e2e8f0 !important;
+    border: 1px solid #2d3347 !important;
+}
+label span {
+    color: #94a3b8 !important;
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.07em !important;
+    text-transform: uppercase !important;
+}
+.app-header {
+    border-left: 4px solid #f97316;
+    padding: 12px 0 12px 16px;
+    margin-bottom: 4px;
+}
+.app-header h1 {
+    color: #f1f5f9 !important;
+    font-size: 1.4rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    margin: 0 !important;
+}
+.app-header p {
+    color: #64748b !important;
+    font-size: 0.75rem !important;
+    margin: 2px 0 0 0 !important;
+    letter-spacing: 0.04em !important;
+}
+"""
+
 # ── Gradio app ────────────────────────────────────────────────────────────────
-with gr.Blocks(title="Road Segmentation", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Road Extraction // Logistics") as demo:
 
     # ── Shared state ──────────────────────────────────────────────────────────
-    sat_state      = gr.State(None)   # PIL.Image — current satellite image
-    probs_state    = gr.State(None)   # np.ndarray (H,W) float32 — raw model output
-    cleaned_state  = gr.State(None)   # np.ndarray (H,W) uint8 — cleaned binary mask
+    sat_state      = gr.State(None)
+    probs_state    = gr.State(None)
+    cleaned_state  = gr.State(None)
     click_state    = gr.State({"phase": "start", "start": None})
     batch_files    = gr.State([])
     batch_idx      = gr.State(0)
 
-    gr.Markdown("# Road Segmentation")
+    gr.Markdown(
+        '<div class="app-header"><h1>Road Extraction</h1>'
+        '<p>SegFormer-B2 &nbsp;|&nbsp; DeepGlobe &nbsp;|&nbsp; A* Pathfinding</p></div>'
+    )
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Tab 1 — Inference
@@ -442,4 +523,8 @@ with gr.Blocks(title="Road Segmentation", theme=gr.themes.Soft()) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(
+        server_name=os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0"),
+        server_port=int(os.environ.get("GRADIO_SERVER_PORT", "7860")),
+        css=_CSS,
+    )

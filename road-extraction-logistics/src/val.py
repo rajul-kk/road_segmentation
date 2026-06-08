@@ -22,7 +22,7 @@ def validate():
     fallback_paths = [cfg.FINAL_MODEL_PATH, "models/DeeplabsV3.pth", "models/DeeplabsV3_road_final.pth"]
     model_path = next((p for p in fallback_paths if os.path.exists(p)), None)
     if model_path is None:
-        print(f"❌ Model not found at any known path: {fallback_paths}")
+        print(f"[ERR] Model not found at any known path: {fallback_paths}")
         return
     if model_path != cfg.FINAL_MODEL_PATH:
         print(f"📂 Using fallback model: {model_path}")

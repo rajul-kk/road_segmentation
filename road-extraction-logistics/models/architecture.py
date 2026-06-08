@@ -200,5 +200,5 @@ def load_model(
     epoch = ckpt.get("epoch", "?")
     iou   = ckpt.get("val_iou")
     tag   = f"epoch={epoch}" + (f", val_iou={iou:.4f}" if iou else "")
-    print(f"✅ Loaded {model_type} ({tag}) from {model_path}")
+    print(f"Loaded {model_type} ({tag}) from {model_path}")
     return model

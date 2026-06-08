@@ -120,7 +120,7 @@ def load_checkpoint(path, model, optimizer, scaler):
     if 'scaler_state_dict' in ckpt:
         scaler.load_state_dict(ckpt['scaler_state_dict'])
     start = ckpt['epoch'] + 1
-    print(f"✅ Resuming from epoch {start + 1}")
+    print(f"[OK] Resuming from epoch {start + 1}")
     return start
 
 
@@ -153,7 +153,7 @@ interrupted = False
 
 def signal_handler(sig, frame):
     global interrupted
-    print("\n⚠️  Interrupt received — saving checkpoint before exit...")
+    print("\n[!]️  Interrupt received — saving checkpoint before exit...")
     interrupted = True
 
 
@@ -207,13 +207,13 @@ try:
             save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, args.checkpoint)
 
 except Exception as e:
-    print(f"\n❌ Error during training: {e}")
+    print(f"\n[ERR] Error during training: {e}")
     save_checkpoint(epoch, model, optimizer, scaler, current_val_iou, args.checkpoint)
     raise
 
 # ── Save final model ──────────────────────────────────────────────────────────
 if not interrupted:
-    print("\n✅ Training complete!")
+    print("\n[OK] Training complete!")
     torch.save({
         'model_state_dict': model.state_dict(),
         'epoch': args.epochs,
