@@ -2,7 +2,7 @@
 Road Segmentation Inference Script
 
 Loads a trained DeepLabV3 model and predicts road masks for satellite images.
-For each image: raw mask → morphological clean → skeletonized centerline.
+For each image: raw mask -> morphological clean -> skeletonized centerline.
 
 Usage:
     python run_inference.py
@@ -21,7 +21,7 @@ sys.path.insert(0, project_root)
 os.chdir(project_root)
 
 import config as cfg
-from models.architecture import build_model
+from models.architecture import load_model
 from src.post_process import clean_mask, get_skeleton
 from src.preprocessing import apply_clahe
 
@@ -47,8 +47,14 @@ def parse_args():
     p.add_argument("--skel-dir",   default=cfg.SKEL_DIR,        help="Directory for skeletonized centerlines")
     p.add_argument("--model",      default=cfg.FINAL_MODEL_PATH, help="Path to trained model checkpoint")
     p.add_argument("--backbone",   default=cfg.BACKBONE,        choices=["resnet50", "resnet101"])
+    p.add_argument("--model-type", default=None,
+                   choices=["deeplabv3", "segformer"],
+                   help="Model architecture (default: cfg.MODEL_TYPE)")
+    p.add_argument("--variant",    default=None,
+                   help="SegFormer variant b0-b5 (default: cfg.SEGFORMER_VARIANT)")
     p.add_argument("--threshold",  type=float, default=cfg.THRESHOLD, help="Road probability threshold (0–1)")
-    p.add_argument("--no-clahe",   action="store_true",          help="Disable CLAHE preprocessing")
+    p.add_argument("--no-clahe",   action="store_true", help="Disable CLAHE preprocessing")
+    p.add_argument("--no-tta",     action="store_true", help="Disable test-time augmentation (h-flip average)")
     return p.parse_args()
 
 
@@ -58,28 +64,31 @@ def main():
     device = cfg.DEVICE
     print(f"Using device: {device}")
 
-    if not os.path.exists(args.model):
-        raise FileNotFoundError(f"Model file not found: {args.model}")
-
-    print(f"Loading model from {args.model}...")
-    model = build_model(backbone=args.backbone).to(device)
-    model.eval()
-
-    ckpt = torch.load(args.model, map_location=device)
-    model.load_state_dict(ckpt['model_state_dict'] if 'model_state_dict' in ckpt else ckpt)
-    if 'epoch' in ckpt:
-        print(f"✅ Loaded checkpoint from epoch {ckpt['epoch']}")
-    else:
-        print("✅ Loaded model weights")
+    model = load_model(
+        model_path=args.model if args.model != cfg.FINAL_MODEL_PATH else None,
+        model_type=args.model_type,
+        backbone=args.backbone,
+        variant=args.variant,
+        device=device,
+    )
 
     use_clahe = cfg.USE_CLAHE and not args.no_clahe
+    use_tta   = not args.no_tta
 
     @torch.no_grad()
     def predict_mask(img: Image.Image) -> Image.Image:
-        x = _preprocess(img).to(device)
-        logits = model(x)['out']                         # (1, 2, H, W)
-        probs  = torch.softmax(logits, dim=1)[:, 1:2]   # road class probability
-        mask   = (probs > args.threshold).float().cpu().numpy()[0, 0]
+        x = _preprocess(img).to(device)                 # (1, 3, H, W)
+        logits = model(x)['out']                        # (1, 2, H, W)
+
+        if use_tta:
+            # Average with horizontally flipped prediction for better accuracy
+            x_flip      = torch.flip(x, dims=[3])
+            logits_flip = model(x_flip)['out']
+            logits_flip = torch.flip(logits_flip, dims=[3])  # flip back to original orientation
+            logits      = (logits + logits_flip) * 0.5
+
+        probs = torch.softmax(logits, dim=1)[:, 1:2]    # road class probability (1, 1, H, W)
+        mask  = (probs > args.threshold).float().cpu().numpy()[0, 0]
         return Image.fromarray((mask * 255).astype(np.uint8))
 
     # ── I/O setup ─────────────────────────────────────────────────────────────
@@ -95,7 +104,7 @@ def main():
         return
 
     print(f"\nFound {len(files)} images in {args.input}")
-    print(f"Threshold: {args.threshold}  |  CLAHE: {use_clahe}")
+    print(f"Threshold: {args.threshold}  |  CLAHE: {use_clahe}  |  TTA: {use_tta}")
     print("=" * 60)
 
     processed = skipped = 0
@@ -128,14 +137,14 @@ def main():
             Image.fromarray(get_skeleton(mask_arr)).save(skel_path)
 
             processed += 1
-            print(f"   ✅ Saved mask + cleaned + skeleton")
+            print(f"   Saved mask + cleaned + skeleton")
 
         except Exception as e:
-            print(f"   ❌ Error: {e}", flush=True)
+            print(f"   Error: {e}", flush=True)
 
     print("=" * 60)
-    print(f"✅ Done — processed: {processed}, skipped: {skipped}")
-    print(f"Masks → {args.output}")
+    print(f"Done — processed: {processed}, skipped: {skipped}")
+    print(f"Masks -> {args.output}")
 
 
 if __name__ == "__main__":

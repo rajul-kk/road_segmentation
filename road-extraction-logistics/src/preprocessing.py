@@ -57,4 +57,4 @@ if __name__ == "__main__":
     
     base = os.path.splitext(input_path)[0]
     enhanced.save(f"{base}_clahe.jpg")
-    print(f"✅ Saved CLAHE enhanced image to {base}_clahe.jpg")
+    print(f"[OK] Saved CLAHE enhanced image to {base}_clahe.jpg")

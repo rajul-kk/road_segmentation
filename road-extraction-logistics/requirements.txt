@@ -7,3 +7,5 @@ tqdm>=4.65,<5
 opencv-python>=4.8,<5
 scikit-image>=0.21,<1
 kagglehub>=0.2
+gradio>=4.0
+transformers>=4.35    # SegFormer and other HuggingFace vision models

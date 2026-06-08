@@ -3,7 +3,9 @@ import random
 import torch
 
 # ── Training ──────────────────────────────────────────────────────────────────
-BATCH_SIZE = 4
+IMAGE_SIZE = 1024   # native DeepGlobe resolution — roads are thin, resolution matters
+                   # P100 16GB: batch=4 at 1024px (~12 GB)  |  batch=16 at 512px (~9 GB)
+BATCH_SIZE = 4     # 4 at 1024px (P100).  Use 16 if you set IMAGE_SIZE=512.
 NUM_EPOCHS = 10
 LEARNING_RATE = 1e-4
 SAVE_EVERY_N_EPOCHS = 1
@@ -13,7 +15,13 @@ NUM_WORKERS = 0        # set >0 on Linux/Mac; Windows multiprocessing requires _
 PIN_MEMORY = True
 
 # ── Model ─────────────────────────────────────────────────────────────────────
-BACKBONE = "resnet50"  # "resnet50" | "resnet101" | "mobilenet_v3_large"
+BACKBONE = "resnet50"  # "resnet50" (default) | "resnet101" (higher accuracy, ~2x params)
+
+# ── Model selection ───────────────────────────────────────────────────────────
+MODEL_TYPE = "segformer"        # "segformer" | "deeplabv3"
+SEGFORMER_VARIANT = "b2"        # b0 · b2 (recommended) · b5
+SEGFORMER_MODEL_PATH = "models/checkpoints/segformer_best.pth"
+
 NUM_CLASSES = 2
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -33,8 +41,8 @@ USE_CLAHE = True
 
 # ── Pathfinding ───────────────────────────────────────────────────────────────
 USE_SKELETON = True
-RDP_EPSILON = 2.0
-PIXEL_RESOLUTION_METERS = 2.39  # DeepGlobe ~0.5m/px native, scaled to 512px
+RDP_EPSILON = 2.0               # Ramer-Douglas-Peucker tolerance in pixels
+PIXEL_RESOLUTION_METERS = 2.39  # DeepGlobe ~0.5 m/px at native res, scaled to 512px
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
